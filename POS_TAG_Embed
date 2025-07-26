@@ -1,0 +1,77 @@
+import pandas as pd
+import spacy
+from gensim.models import Word2Vec
+import numpy as np
+
+# Load the spaCy model
+nlp = spacy.load("en_core_web_sm")
+
+# POS tagging function
+def pos_tagging(text):
+    if isinstance(text, str):  # Process only if the input is a string
+        doc = nlp(text)
+        # Generate tags by combining universal and fine-grained POS tags
+        return [f"{token.pos_}_{token.tag_}" for token in doc]
+    return []
+
+# Generate sentence vectors
+def get_sentence_vector(tokens, word2vec_model):
+    if not tokens:  # Handle empty token lists
+        return np.zeros(word2vec_model.vector_size)
+    vectors = [word2vec_model.wv[word] for word in tokens if word in word2vec_model.wv]
+    if vectors:
+        return np.mean(vectors, axis=0)
+    else:
+        return np.zeros(word2vec_model.vector_size)
+
+# Preprocess a DataFrame
+def preprocess_dataframe(df, word2vec_model=None):
+    # Generate POS tags
+    df['combined_pos_tags'] = df['text'].apply(pos_tagging)
+    # Filter rows where combined_pos_tags has less than 5 tokens
+    df = df[df['combined_pos_tags'].apply(len) >= 5].reset_index(drop=True)
+    
+    # Generate sentence vectors if Word2Vec model is provided
+    if word2vec_model:
+        df['sentence_vector'] = df['combined_pos_tags'].apply(lambda tokens: get_sentence_vector(tokens, word2vec_model))
+    return df
+
+# Load train data
+#file_path = "C:\\Users\\acer\\Desktop\\temp\\balanced_BinaryClassified_All-Bloom.csv"
+# please change this to point to your input text data .csv
+file_path ="C:\\Users\\Lenovo\\Documents\\AI Vs Human\\PosTagGpt\\balanced_BinaryClassified_All-GPT.csv"
+DatasetPath = file_path.replace(".csv", "")
+train_df = pd.read_csv(file_path)
+
+# Generate POS tag sequences
+train_df['combined_pos_tags'] = train_df['text'].apply(pos_tagging)
+train_df = train_df[train_df['combined_pos_tags'].apply(len) >= 5].reset_index(drop=True)  # Filter short rows
+
+# Prepare data for Word2Vec
+pos_sequences = train_df['combined_pos_tags'].tolist()  # Convert column to a list of lists
+
+# Train Word2Vec model
+word2vec_model = Word2Vec(sentences=pos_sequences, vector_size=100, window=5, min_count=2, workers=4)
+word2vec_model.save("word2vec_combined.model")
+
+# Generate sentence vectors for train data
+train_df['sentence_vector'] = train_df['combined_pos_tags'].apply(lambda tokens: get_sentence_vector(tokens, word2vec_model))
+
+# Save the processed train DataFrame
+output_file_path = DatasetPath + "_Filtered_POS_Tagged.csv"
+train_df.to_csv(output_file_path, index=False)
+
+# Process test data
+#test_file_path = "C:\\temp\\All-BinaryBloom.csv"
+test_file_path ="C:\\Users\\Lenovo\\Documents\\AI Vs Human\\PosTagGpt\\All-BinaryGPT.csv"
+test_df = pd.read_csv(test_file_path)
+test_df = preprocess_dataframe(test_df, word2vec_model)
+
+# Save the processed test DataFrame
+test_output_file_path = test_file_path.replace(".csv", "_Filtered_POS_Tagged.csv")
+test_df.to_csv(test_output_file_path, index=False)
+
+# Output results
+print(f"Vocabulary Size: {len(word2vec_model.wv)}")
+print(train_df.head())
+print(test_df.head())
